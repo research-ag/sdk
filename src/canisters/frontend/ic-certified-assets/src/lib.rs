@@ -536,7 +536,7 @@ async fn send(SendCyclesArgs { canister, amount }: SendCyclesArgs<u64>) -> Resul
 #[update(guard = "is_controller", name = "wallet_send128")]
 #[candid_method(update)]
 async fn send128(args: SendCyclesArgs<u128>) -> Result<(), String> {
-    match ic_cdk::api::call::call_with_payment128(
+    ic_cdk::api::call::call_with_payment128::<(DepositCyclesArgs,), ()>(
         Principal::management_canister(),
         "deposit_cycles",
         (DepositCyclesArgs {
@@ -545,21 +545,13 @@ async fn send128(args: SendCyclesArgs<u128>) -> Result<(), String> {
         args.amount,
     )
     .await
-    {
-        Ok(x) => {
-            x
-        }
-        Err((code, msg)) => {
-            let refund = ic_cdk::api::call::msg_cycles_refunded128();
-            let call_error =
-                format!("An error happened during the call: {}: {}", code as u8, msg);
-            let error = format!(
-                "Cycles sent: {}\nCycles refunded: {}\n{}",
-                args.amount, refund, call_error
-            );
-            return Err(error);
-        }
-    };
+    .map_err(|(code, msg)| {
+        let refund = ic_cdk::api::call::msg_cycles_refunded128();
+        format!(
+            "Cycles sent: {}\nCycles refunded: {}\nAn error happened during the call: {}: {}",
+            args.amount, refund, code as u8, msg
+        )
+    })?; // <- error will propagate if any
 
     Ok(())
 }
