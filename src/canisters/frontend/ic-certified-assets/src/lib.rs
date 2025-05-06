@@ -528,7 +528,7 @@ struct DepositCyclesArgs {
 async fn wallet_send(
     SendCyclesArgs { canister, amount }: SendCyclesArgs<u64>,
 ) -> Result<(), String> {
-    send128(SendCyclesArgs {
+    wallet_send128(SendCyclesArgs {
         canister,
         amount: amount as u128,
     })
