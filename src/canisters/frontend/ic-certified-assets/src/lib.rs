@@ -127,7 +127,7 @@ async fn take_ownership() {
 
 #[update]
 #[candid_method(update)]
-async fn validate_take_ownership2() -> Result<String, String> {
+async fn validate_take_ownership() -> Result<String, String> {
     Ok("revoke all permissions, then gives the caller Commit permissions".to_string())
 }
 
@@ -463,26 +463,6 @@ pub fn post_upgrade(stable_state: StableState, args: Option<AssetCanisterArgs>) 
     });
 }
 
-#[test]
-fn candid_interface_compatibility() {
-    use candid_parser::utils::{service_compatible, CandidSource};
-    use std::path::PathBuf;
-
-    candid::export_service!();
-    let new_interface = __export_service();
-
-    let old_interface =
-        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("assets.did");
-
-    println!("Exported interface: {}", new_interface);
-
-    service_compatible(
-        CandidSource::Text(&new_interface),
-        CandidSource::File(old_interface.as_path()),
-    )
-    .expect("The assets canister interface is not compatible with the assets.did file");
-}
-
 // Cycle Management
 
 // Return the cycle balance of this canister.
@@ -557,3 +537,24 @@ async fn wallet_send128(args: SendCyclesArgs<u128>) -> Result<(), String> {
 
     Ok(())
 }
+
+#[test]
+fn candid_interface_compatibility() {
+    use candid_parser::utils::{service_compatible, CandidSource};
+    use std::path::PathBuf;
+
+    candid::export_service!();
+    let new_interface = __export_service();
+
+    let old_interface =
+        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("assets.did");
+
+    println!("Exported interface: {}", new_interface);
+
+    service_compatible(
+        CandidSource::Text(&new_interface),
+        CandidSource::File(old_interface.as_path()),
+    )
+    .expect("The assets canister interface is not compatible with the assets.did file");
+}
+
