@@ -492,9 +492,9 @@ struct BalanceResult<TCycles> {
     amount: TCycles,
 }
 
-#[query(guard = "is_controller", name = "wallet_balance")]
+#[query(guard = "is_controller")]
 #[candid_method(query)]
-fn balance() -> BalanceResult<u64> {
+fn wallet_balance() -> BalanceResult<u64> {
     BalanceResult {
         amount: ic_cdk::api::canister_balance128()
             .try_into()
@@ -502,9 +502,9 @@ fn balance() -> BalanceResult<u64> {
     }
 }
 
-#[query(guard = "is_controller", name = "wallet_balance128")]
+#[query(guard = "is_controller")]
 #[candid_method(query)]
-fn balance128() -> BalanceResult<u128> {
+fn wallet_balance128() -> BalanceResult<u128> {
     BalanceResult {
         amount: ic_cdk::api::canister_balance128(),
     }
@@ -523,9 +523,9 @@ struct DepositCyclesArgs {
     canister_id: Principal,
 }
 
-#[update(guard = "is_controller", name = "wallet_send")]
+#[update(guard = "is_controller")]
 #[candid_method(update)]
-async fn send(SendCyclesArgs { canister, amount }: SendCyclesArgs<u64>) -> Result<(), String> {
+async fn wallet_send(SendCyclesArgs { canister, amount }: SendCyclesArgs<u64>) -> Result<(), String> {
     send128(SendCyclesArgs {
         canister,
         amount: amount as u128,
@@ -533,9 +533,9 @@ async fn send(SendCyclesArgs { canister, amount }: SendCyclesArgs<u64>) -> Resul
     .await
 }
 
-#[update(guard = "is_controller", name = "wallet_send128")]
+#[update(guard = "is_controller")]
 #[candid_method(update)]
-async fn send128(args: SendCyclesArgs<u128>) -> Result<(), String> {
+async fn wallet_send128(args: SendCyclesArgs<u128>) -> Result<(), String> {
     ic_cdk::api::call::call_with_payment128::<(DepositCyclesArgs,), ()>(
         Principal::management_canister(),
         "deposit_cycles",
@@ -555,3 +555,4 @@ async fn send128(args: SendCyclesArgs<u128>) -> Result<(), String> {
 
     Ok(())
 }
+
