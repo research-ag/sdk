@@ -557,4 +557,3 @@ fn candid_interface_compatibility() {
     )
     .expect("The assets canister interface is not compatible with the assets.did file");
 }
-

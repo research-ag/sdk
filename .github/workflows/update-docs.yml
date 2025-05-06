@@ -24,7 +24,7 @@ jobs:
       - name: Check cargo build
         run: cargo build
       - name: Show download worked
-        run: cargo run -- --version
+        run: CARGO_PKG_VERSION=0.26.0 cargo run -- --version
       - name: Check for changes
         run: |
           cargo run -- schema --outfile docs/dfx-json-schema.json
