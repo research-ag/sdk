@@ -18,13 +18,13 @@ use crate::{
     types::*,
 };
 use asset_certification::types::{certification::AssetKey, rc_bytes::RcBytes};
-use candid::{candid_method, Principal, CandidType};
+use candid::{candid_method, CandidType, Principal};
 use ic_cdk::api::{call::ManualReply, caller, data_certificate, set_certified_data, time, trap};
 use ic_cdk::{query, update};
 use serde_bytes::ByteBuf;
 use std::cell::RefCell;
 
-use serde::{Deserialize};
+use serde::Deserialize;
 
 #[cfg(target_arch = "wasm32")]
 #[link_section = "icp:public supported_certificate_versions"]
@@ -525,7 +525,9 @@ struct DepositCyclesArgs {
 
 #[update(guard = "is_controller")]
 #[candid_method(update)]
-async fn wallet_send(SendCyclesArgs { canister, amount }: SendCyclesArgs<u64>) -> Result<(), String> {
+async fn wallet_send(
+    SendCyclesArgs { canister, amount }: SendCyclesArgs<u64>,
+) -> Result<(), String> {
     send128(SendCyclesArgs {
         canister,
         amount: amount as u128,
@@ -555,4 +557,3 @@ async fn wallet_send128(args: SendCyclesArgs<u128>) -> Result<(), String> {
 
     Ok(())
 }
-
