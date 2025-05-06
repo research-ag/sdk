@@ -127,7 +127,7 @@ async fn take_ownership() {
 
 #[update]
 #[candid_method(update)]
-async fn validate_take_ownership() -> Result<String, String> {
+async fn validate_take_ownership2() -> Result<String, String> {
     Ok("revoke all permissions, then gives the caller Commit permissions".to_string())
 }
 
