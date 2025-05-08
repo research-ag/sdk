@@ -18,11 +18,13 @@ use crate::{
     types::*,
 };
 use asset_certification::types::{certification::AssetKey, rc_bytes::RcBytes};
-use candid::{candid_method, Principal};
+use candid::{candid_method, CandidType, Principal};
 use ic_cdk::api::{call::ManualReply, caller, data_certificate, set_certified_data, time, trap};
 use ic_cdk::{query, update};
 use serde_bytes::ByteBuf;
 use std::cell::RefCell;
+
+use serde::Deserialize;
 
 #[cfg(target_arch = "wasm32")]
 #[link_section = "icp:public supported_certificate_versions"]
@@ -459,6 +461,81 @@ pub fn post_upgrade(stable_state: StableState, args: Option<AssetCanisterArgs>) 
             s.borrow_mut().set_permissions(set_permissions);
         }
     });
+}
+
+// Cycle Management
+
+// Return the cycle balance of this canister.
+
+#[derive(CandidType)]
+struct BalanceResult<TCycles> {
+    amount: TCycles,
+}
+
+#[query(guard = "is_controller")]
+#[candid_method(query)]
+fn wallet_balance() -> BalanceResult<u64> {
+    BalanceResult {
+        amount: ic_cdk::api::canister_balance128()
+            .try_into()
+            .expect("Balance exceeded a 64-bit value; call `wallet_balance128`"),
+    }
+}
+
+#[query(guard = "is_controller")]
+#[candid_method(query)]
+fn wallet_balance128() -> BalanceResult<u128> {
+    BalanceResult {
+        amount: ic_cdk::api::canister_balance128(),
+    }
+}
+
+/// Send cycles to another canister.
+
+#[derive(CandidType, Deserialize)]
+struct SendCyclesArgs<TCycles> {
+    canister: Principal,
+    amount: TCycles,
+}
+
+#[derive(CandidType)]
+struct DepositCyclesArgs {
+    canister_id: Principal,
+}
+
+#[update(guard = "is_controller")]
+#[candid_method(update)]
+async fn wallet_send(
+    SendCyclesArgs { canister, amount }: SendCyclesArgs<u64>,
+) -> Result<(), String> {
+    wallet_send128(SendCyclesArgs {
+        canister,
+        amount: amount as u128,
+    })
+    .await
+}
+
+#[update(guard = "is_controller")]
+#[candid_method(update)]
+async fn wallet_send128(args: SendCyclesArgs<u128>) -> Result<(), String> {
+    ic_cdk::api::call::call_with_payment128::<(DepositCyclesArgs,), ()>(
+        Principal::management_canister(),
+        "deposit_cycles",
+        (DepositCyclesArgs {
+            canister_id: args.canister,
+        },),
+        args.amount,
+    )
+    .await
+    .map_err(|(code, msg)| {
+        let refund = ic_cdk::api::call::msg_cycles_refunded128();
+        format!(
+            "Cycles sent: {}\nCycles refunded: {}\nAn error happened during the call: {}: {}",
+            args.amount, refund, code as u8, msg
+        )
+    })?; // <- error will propagate if any
+
+    Ok(())
 }
 
 #[test]
