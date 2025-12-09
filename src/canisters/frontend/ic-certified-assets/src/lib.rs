@@ -464,11 +464,6 @@ macro_rules! export_canister_methods {
             $crate::wallet_balance().amount
         }
 
-        #[$crate::ic_certified_assets_query(guard = "__ic_certified_assets_is_controller")]
-        #[$crate::ic_certified_assets_candid_method(query)]
-        fn wallet_balance128() -> u128 {
-            $crate::wallet_balance128().amount
-        }
 
         #[$crate::ic_certified_assets_query]
         #[$crate::ic_certified_assets_candid_method(query)]
@@ -732,11 +727,6 @@ macro_rules! export_canister_methods {
             $crate::wallet_send($crate::SendCyclesArgs { canister, amount }).await
         }
 
-        #[$crate::ic_certified_assets_update(guard = "__ic_certified_assets_is_controller")]
-        #[$crate::ic_certified_assets_candid_method(update)]
-        async fn wallet_send128(canister: candid::Principal, amount: u128) -> Result<(), String> {
-            $crate::wallet_send128($crate::SendCyclesArgs { canister, amount }).await
-        }
     };
 }
 
@@ -757,11 +747,6 @@ pub fn wallet_balance() -> BalanceResult<u64> {
     }
 }
 
-pub fn wallet_balance128() -> BalanceResult<u128> {
-    BalanceResult {
-        amount: ic_cdk::api::canister_cycle_balance(),
-    }
-}
 
 /// Send cycles to another canister.
 
@@ -779,31 +764,24 @@ struct DepositCyclesArgs {
 pub async fn wallet_send(
     SendCyclesArgs { canister, amount }: SendCyclesArgs<u64>,
 ) -> Result<(), String> {
-    wallet_send128(SendCyclesArgs {
-        canister,
-        amount: amount as u128,
-    })
-    .await
-}
-
-pub async fn wallet_send128(args: SendCyclesArgs<u128>) -> Result<(), String> {
     ic_cdk::call::Call::unbounded_wait(
         Principal::management_canister(),
         "deposit_cycles",
     )
-    .with_arg((DepositCyclesArgs { canister_id: args.canister },))
-    .with_cycles(args.amount)
+    .with_arg((DepositCyclesArgs { canister_id: canister },))
+    .with_cycles(amount as u128)
     .await
-    .map_err(|(code, msg)| {
+    .map_err(|e: ic_cdk::call::CallFailed| {
         let refund = ic_cdk::api::msg_cycles_refunded();
         format!(
-            "Cycles sent: {}\nCycles refunded: {}\nAn error happened during the call: {}: {}",
-            args.amount, refund, code as u8, msg
+            "Cycles sent: {}\nCycles refunded: {}\nAn error happened during the call: {}",
+            amount, refund, e
         )
-    })?; // <- error will propagate if any
+    })?;
 
     Ok(())
 }
+
 
 #[test]
 fn candid_interface_compatibility() {
