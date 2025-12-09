@@ -752,8 +752,8 @@ pub fn wallet_balance() -> BalanceResult<u64> {
 
 #[derive(CandidType, Deserialize)]
 pub struct SendCyclesArgs<TCycles> {
-    canister: Principal,
-    amount: TCycles,
+    pub canister: Principal,
+    pub amount: TCycles,
 }
 
 #[derive(CandidType)]
