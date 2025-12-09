@@ -21,11 +21,11 @@ use crate::{
     types::*,
 };
 use asset_certification::types::{certification::AssetKey, rc_bytes::RcBytes};
-use candid::{candid_method, CandidType, Principal};
+use candid::Principal;
 use ic_cdk::api::{canister_self, certified_data_set, data_certificate, msg_caller, trap};
-use ic_cdk::{query, update};
-use serde_bytes::ByteBuf;
 use std::cell::RefCell;
+use candid::CandidType;
+use serde::Deserialize;
 
 // Re-export for use in macros
 #[doc(hidden)]
@@ -37,10 +37,6 @@ pub use ic_cdk::update as ic_certified_assets_update;
 #[doc(hidden)]
 pub use serde_bytes::ByteBuf as ic_certified_assets_ByteBuf;
 
-use serde::Deserialize;
-
-#[cfg(target_arch = "wasm32")]
-#[link_section = "icp:public supported_certificate_versions"]
 pub static SUPPORTED_CERTIFICATE_VERSIONS: [u8; 3] = *b"1,2";
 
 thread_local! {
@@ -461,6 +457,19 @@ macro_rules! export_canister_methods {
             $crate::api_version()
         }
 
+        // Cycle management queries
+        #[$crate::ic_certified_assets_query(guard = "__ic_certified_assets_is_controller")]
+        #[$crate::ic_certified_assets_candid_method(query)]
+        fn wallet_balance() -> u64 {
+            $crate::wallet_balance().amount
+        }
+
+        #[$crate::ic_certified_assets_query(guard = "__ic_certified_assets_is_controller")]
+        #[$crate::ic_certified_assets_candid_method(query)]
+        fn wallet_balance128() -> u128 {
+            $crate::wallet_balance128().amount
+        }
+
         #[$crate::ic_certified_assets_query]
         #[$crate::ic_certified_assets_candid_method(query)]
         fn retrieve(
@@ -715,6 +724,19 @@ macro_rules! export_canister_methods {
         fn validate_configure(arg: types::ConfigureArguments) -> Result<String, String> {
             $crate::validate_configure(arg)
         }
+
+        // Cycle management updates
+        #[$crate::ic_certified_assets_update(guard = "__ic_certified_assets_is_controller")]
+        #[$crate::ic_certified_assets_candid_method(update)]
+        async fn wallet_send(canister: candid::Principal, amount: u64) -> Result<(), String> {
+            $crate::wallet_send($crate::SendCyclesArgs { canister, amount }).await
+        }
+
+        #[$crate::ic_certified_assets_update(guard = "__ic_certified_assets_is_controller")]
+        #[$crate::ic_certified_assets_candid_method(update)]
+        async fn wallet_send128(canister: candid::Principal, amount: u128) -> Result<(), String> {
+            $crate::wallet_send128($crate::SendCyclesArgs { canister, amount }).await
+        }
     };
 }
 
@@ -723,13 +745,11 @@ macro_rules! export_canister_methods {
 // Return the cycle balance of this canister.
 
 #[derive(CandidType)]
-struct BalanceResult<TCycles> {
+pub struct BalanceResult<TCycles> {
     amount: TCycles,
 }
 
-#[query(guard = "is_controller")]
-#[candid_method(query)]
-fn wallet_balance() -> BalanceResult<u64> {
+pub fn wallet_balance() -> BalanceResult<u64> {
     BalanceResult {
         amount: ic_cdk::api::canister_balance128()
             .try_into()
@@ -737,9 +757,7 @@ fn wallet_balance() -> BalanceResult<u64> {
     }
 }
 
-#[query(guard = "is_controller")]
-#[candid_method(query)]
-fn wallet_balance128() -> BalanceResult<u128> {
+pub fn wallet_balance128() -> BalanceResult<u128> {
     BalanceResult {
         amount: ic_cdk::api::canister_balance128(),
     }
@@ -748,7 +766,7 @@ fn wallet_balance128() -> BalanceResult<u128> {
 /// Send cycles to another canister.
 
 #[derive(CandidType, Deserialize)]
-struct SendCyclesArgs<TCycles> {
+pub struct SendCyclesArgs<TCycles> {
     canister: Principal,
     amount: TCycles,
 }
@@ -758,9 +776,7 @@ struct DepositCyclesArgs {
     canister_id: Principal,
 }
 
-#[update(guard = "is_controller")]
-#[candid_method(update)]
-async fn wallet_send(
+pub async fn wallet_send(
     SendCyclesArgs { canister, amount }: SendCyclesArgs<u64>,
 ) -> Result<(), String> {
     wallet_send128(SendCyclesArgs {
@@ -770,9 +786,7 @@ async fn wallet_send(
     .await
 }
 
-#[update(guard = "is_controller")]
-#[candid_method(update)]
-async fn wallet_send128(args: SendCyclesArgs<u128>) -> Result<(), String> {
+pub async fn wallet_send128(args: SendCyclesArgs<u128>) -> Result<(), String> {
     ic_cdk::api::call::call_with_payment128::<(DepositCyclesArgs,), ()>(
         Principal::management_canister(),
         "deposit_cycles",
