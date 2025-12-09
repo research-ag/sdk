@@ -21,11 +21,11 @@ use crate::{
     types::*,
 };
 use asset_certification::types::{certification::AssetKey, rc_bytes::RcBytes};
+use candid::CandidType;
 use candid::Principal;
 use ic_cdk::api::{canister_self, certified_data_set, data_certificate, msg_caller, trap};
-use std::cell::RefCell;
-use candid::CandidType;
 use serde::Deserialize;
+use std::cell::RefCell;
 
 // Re-export for use in macros
 #[doc(hidden)]
@@ -464,7 +464,6 @@ macro_rules! export_canister_methods {
             $crate::wallet_balance()
         }
 
-
         #[$crate::ic_certified_assets_query]
         #[$crate::ic_certified_assets_candid_method(query)]
         fn retrieve(
@@ -730,15 +729,11 @@ macro_rules! export_canister_methods {
         // TCYCLES minting: deposit cycles to TCYCLES ledger account
         #[$crate::ic_certified_assets_update(guard = "__ic_certified_assets_is_controller")]
         #[$crate::ic_certified_assets_candid_method(update)]
-        async fn tcycles_deposit(
-            to: $crate::Account,
-            amount: u64,
-        ) {
+        async fn tcycles_deposit(to: $crate::Account, amount: u64) {
             if let Err(msg) = $crate::tcycles_deposit(to, amount, None).await {
                 ic_cdk::trap(&msg);
             }
         }
-
     };
 }
 
@@ -774,7 +769,11 @@ pub struct DepositResult {
 
 /// Mints TCYCLES by depositing this canister's cycles to the TCYCLES ledger.
 /// Only controllers can call this method (guard is applied in the export macro).
-pub async fn tcycles_deposit(to: Account, amount: u64, memo: Option<__BlobForTcycles>) -> Result<DepositResult, String> {
+pub async fn tcycles_deposit(
+    to: Account,
+    amount: u64,
+    memo: Option<__BlobForTcycles>,
+) -> Result<DepositResult, String> {
     let ledger = Principal::from_text("um5iw-rqaaa-aaaaq-qaaba-cai")
         .expect("Invalid TCYCLES ledger principal");
 
@@ -812,7 +811,6 @@ pub fn wallet_balance() -> BalanceResult<u64> {
     }
 }
 
-
 /// Send cycles to another canister.
 
 #[derive(CandidType, Deserialize)]
@@ -829,24 +827,22 @@ struct DepositCyclesArgs {
 pub async fn wallet_send(
     SendCyclesArgs { canister, amount }: SendCyclesArgs<u64>,
 ) -> Result<(), String> {
-    ic_cdk::call::Call::unbounded_wait(
-        Principal::management_canister(),
-        "deposit_cycles",
-    )
-    .with_arg((DepositCyclesArgs { canister_id: canister },))
-    .with_cycles(amount as u128)
-    .await
-    .map_err(|e: ic_cdk::call::CallFailed| {
-        let refund = ic_cdk::api::msg_cycles_refunded();
-        format!(
-            "Cycles sent: {}\nCycles refunded: {}\nAn error happened during the call: {}",
-            amount, refund, e
-        )
-    })?;
+    ic_cdk::call::Call::unbounded_wait(Principal::management_canister(), "deposit_cycles")
+        .with_arg((DepositCyclesArgs {
+            canister_id: canister,
+        },))
+        .with_cycles(amount as u128)
+        .await
+        .map_err(|e: ic_cdk::call::CallFailed| {
+            let refund = ic_cdk::api::msg_cycles_refunded();
+            format!(
+                "Cycles sent: {}\nCycles refunded: {}\nAn error happened during the call: {}",
+                amount, refund, e
+            )
+        })?;
 
     Ok(())
 }
-
 
 #[test]
 fn candid_interface_compatibility() {
