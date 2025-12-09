@@ -773,27 +773,24 @@ pub async fn tcycles_deposit(
     to: Account,
     amount: u64,
     memo: Option<__BlobForTcycles>,
-) -> Result<DepositResult, String> {
+) -> Result<(), String> {
     let ledger = Principal::from_text("um5iw-rqaaa-aaaaq-qaaba-cai")
         .expect("Invalid TCYCLES ledger principal");
 
     // Perform the deposit call while attaching the desired cycle amount.
-    let (result,): (DepositResult,) = ic_cdk::api::call::call_with_payment128(
-        ledger,
-        "deposit",
-        (DepositArgs { to, memo },),
-        amount as u128,
-    )
-    .await
-    .map_err(|e| {
-        let refund = ic_cdk::api::msg_cycles_refunded();
-        format!(
-            "Cycles sent: {}\nCycles refunded: {}\nAn error happened during the call: {:?}",
-            amount, refund, e
-        )
-    })?;
+    ic_cdk::call::Call::unbounded_wait(ledger, "deposit")
+        .with_arg((DepositArgs { to, memo },))
+        .with_cycles(amount as u128)
+        .await
+        .map_err(|e: ic_cdk::call::CallFailed| {
+            let refund = ic_cdk::api::msg_cycles_refunded();
+            format!(
+                "Cycles sent: {}\nCycles refunded: {}\nAn error happened during the call: {}",
+                amount, refund, e
+            )
+        })?;
 
-    Ok(result)
+    Ok(())
 }
 
 // Return the cycle balance of this canister.
