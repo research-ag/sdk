@@ -1,11 +1,11 @@
 use super::rc_bytes::RcBytes;
 use crate::{
     asset_certification::types::certification::{CertificateExpression, ResponseHash},
-    state_machine::{encoding_certification_order, Asset, AssetEncoding},
+    state_machine::{Asset, AssetEncoding, encoding_certification_order},
 };
-use candid::{define_function, CandidType, Deserialize, Nat};
+use candid::{CandidType, Deserialize, Nat, define_function};
 use ic_certification::Hash;
-use ic_representation_independent_hash::{representation_independent_hash, Value};
+use ic_representation_independent_hash::{Value, representation_independent_hash};
 use serde_bytes::ByteBuf;
 use sha2::Digest;
 
@@ -109,7 +109,7 @@ impl HttpRequest {
 
     pub fn redirect_from_raw_to_certified_domain(&self) -> HttpResponse {
         #[cfg(not(test))]
-        let canister_id = ic_cdk::api::id().to_text();
+        let canister_id = ic_cdk::api::canister_self().to_text();
         #[cfg(test)]
         let canister_id = self.get_canister_id();
 
@@ -365,12 +365,12 @@ pub fn build_ic_certificate_expression_from_headers_and_encoding<T>(
 ) -> CertificateExpression {
     let mut headers = headers
         .iter()
-        .map(|(h, _)| format!(", \"{}\"", h))
+        .map(|(h, _)| format!(", \"{h}\""))
         .collect::<Vec<_>>()
         .join("");
     if let Some(encoding) = encoding_name {
         if encoding != "identity" {
-            headers = format!(", \"content-encoding\"{}", headers);
+            headers = format!(", \"content-encoding\"{headers}");
         }
     }
 
@@ -387,7 +387,7 @@ pub fn build_ic_certificate_expression_from_headers<T>(
 ) -> CertificateExpression {
     let headers = headers
         .iter()
-        .map(|(h, _)| format!(", \"{}\"", h))
+        .map(|(h, _)| format!(", \"{h}\""))
         .collect::<Vec<_>>()
         .join("");
 

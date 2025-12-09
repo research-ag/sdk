@@ -2,9 +2,334 @@
 
 # UNRELEASED
 
+## Dependencies
+
+### Frontend canister
+
+#### feat: `get_state_info` returns last asset change timestamp and state hash
+
+- Module hash: 15a6366a4823baf994f314a55ddbdda333dff11cbcc5114caebfe444e5eae3b6
+- https://github.com/dfinity/sdk/pull/4434
+
+# 0.30.1
+
+### feat: asset sync now prints the target asset canister state hash in `--verbose` mode
+
+If an asset canister is updated and `--verbose` is enabled, `dfx` will now print the state hash of the local assets before syncing. Calling `compute_state_hash` on the asset canister after syncing will eventually return the same hash.
+
+### feat: support dogecoin for the local dev environment
+
+You can now launch a network with `dfx start --enable-dogeoin` to run the dogecoin
+integration locally.
+
+### feat: improved the canister snapshot download/upload feature
+
+Improved the canister snapshot download/upload feature by
+- adding progress bars to snapshot download/upload
+- streaming snapshot download/upload directly to/from disk.
+- supporting download/upload with resuming.
+- supporting download/upload with concurrency, default to 3 tasks in parallel.
+
+### fix: use `pocket-ic` to init BTC canisters
+
+The custom logic was prone to becoming outdated, such as not adapting to changing cycles fees.
+By using `pocket-ic`, which gets updated frequently, the BTC integration is significanly less likely to break.
+
+### fix: `dfx start --enable-bitcoin` will add `--bitcoin-node 127.0.0.1:18444` unless nodes are specified in dfx.json
+
+### chore: Bump cdk to 0.19 in project template.
+
+## Dependencies
+
+### Replica
+
+Updated replica to elected commit 724ae4101bfdd8d4443126a6a8b1ec5ca9b68a12.
+
+This incorporates the following executed proposals:
+- [139570](https://dashboard.internetcomputer.org/proposal/139570)
+- [139480](https://dashboard.internetcomputer.org/proposal/139480)
+- [139403](https://dashboard.internetcomputer.org/proposal/139403)
+- [139317](https://dashboard.internetcomputer.org/proposal/139317)
+- [139192](https://dashboard.internetcomputer.org/proposal/139192)
+- [139079](https://dashboard.internetcomputer.org/proposal/139079)
+
+### Frontend canister
+
+#### feat: `list` returns more info about assets
+
+Asset info now contains the fields `max_age: opt nat64;`, `headers: opt vec HeaderField;`, `allow_raw_access: opt bool;`, and ``is_aliased: opt bool;` in addition to the previously returned ones.
+
+#### feat!: `list` is now paginated
+
+`list` now returns info about up to 100 assets instead of all assets in the canister. `start` allows specifying the offset at which the list of assets should start. `length` allows specifying a smaller limit if e.g. headers are too large to return the default number of assets. The full argument to `list` is now `(record { start: opt nat; length: opt nat })`.
+
+#### feat: `compute_state_hash`
+
+The function `compute_state_hash` works similar to `compute_evidence`, but instead of computing a hash over a batch of changes, it computes a hash over the full asset canister content. This can be used to verify the integrity of assets e.g. between a live and a local deployment. (This will only work if builds are deterministic. If there are e.g. timestamps hidden in filenames then hashes will not match.)
+
+- Module hash: 51e80aa7ecbb94ba477bbc910c934794db674d9c441c3f013b8e09390facb389
+- https://github.com/dfinity/sdk/pull/4428
+
+# 0.30.0
+
+### feat: `dfx start --system-canisters` for bootstrapping system canisters
+
+This new flag utilizes the built-in system canisters bootstrapping capability provided by PocketIC v10.
+`dfx nns install` is not needed anymore.
+
+When using `dfx start --system-canisters`, there's no option to specify accounts to have initial balances like you can with `dfx nns install --ledger-accounts <account-ids>`.
+However, the anonymous identity's account comes with an initial balance of 1 Billion ICP. You can transfer some of these ICP tokens to your own account on the ICP ledger. Then convert some ICP into cycles balance on the cycles-ledger.
+
+```sh
+YOUR_ACCOUNT_ID="$(dfx ledger account-id)"
+dfx ledger --identity anonymous transfer --memo 1 --icp 1000000 "$YOUR_ACCOUNT_ID"
+dfx cycles convert --amount 100
+```
+
+### fix: bump svelte dependencies in project templates
+
+### Frontend canister
+
+Use `BTreeMap` instead of `HashMap` for headers to guarantee deterministic ordering.
+
+Sets the `ic_env` cookie for html files, which contains the root key and the canister environment variables that are prefixed with `PUBLIC_`.
+Please note that this version of the frontend canister is only compatible with PocketIC **v10** and above.
+
+- Module hash: b312a16c3179cf8384afa852e468c1333b7439d4c5a39f26df69b12320f629f8
+- https://github.com/dfinity/sdk/pull/4400
+- https://github.com/dfinity/sdk/pull/4392
+- https://github.com/dfinity/sdk/pull/4387
+- https://github.com/dfinity/sdk/pull/4389
+
+## Dependencies
+
+### Candid
+
+Updated candid_parser to 0.2.2.
+
+### Replica
+
+Updated replica to elected commit 575bcd0954e9d00066fd465223b755bda645edd6.
+This incorporates the following executed proposals:
+
+- [139002](https://dashboard.internetcomputer.org/proposal/139002)
+- [138996](https://dashboard.internetcomputer.org/proposal/138996)
+- [138908](https://dashboard.internetcomputer.org/proposal/138908)
+- [138814](https://dashboard.internetcomputer.org/proposal/138814)
+- [138708](https://dashboard.internetcomputer.org/proposal/138708)
+- [138597](https://dashboard.internetcomputer.org/proposal/138597)
+- [138478](https://dashboard.internetcomputer.org/proposal/138478)
+- [138476](https://dashboard.internetcomputer.org/proposal/138476)
+- [138477](https://dashboard.internetcomputer.org/proposal/138477)
+- [138363](https://dashboard.internetcomputer.org/proposal/138363)
+- [138362](https://dashboard.internetcomputer.org/proposal/138362)
+- [138361](https://dashboard.internetcomputer.org/proposal/138361)
+- [138268](https://dashboard.internetcomputer.org/proposal/138268)
+- [138266](https://dashboard.internetcomputer.org/proposal/138266)
+- [138128](https://dashboard.internetcomputer.org/proposal/138128)
+- [138129](https://dashboard.internetcomputer.org/proposal/138129)
+- [137921](https://dashboard.internetcomputer.org/proposal/137921)
+- [137795](https://dashboard.internetcomputer.org/proposal/137795)
+- [137678](https://dashboard.internetcomputer.org/proposal/137678)
+
+
+# 0.29.2
+
+### Frontend canister
+
+Use CBOR for serializing asset canister state to stable memory instead of Candid.
+
+- Module hash: 423f20ee4e5daf8f76d6bb2b4a87440227f15b26cf874c132fd75d83e252c8f6
+- https://github.com/dfinity/sdk/pull/4368
+
+
+### feat: extended `dfx canister update-settings` with `--sync-with` option.
+
+Extended `dfx canister update-settings` with `--sync-with` option to support syncing canister settings from one cansiter to another, example as below.
+
+```
+dfx canister update-settings to_canister --sync-with from_canister
+```
+
+## Dependencies
+
+### Motoko
+
+Updated Motoko to [0.16.2](https://github.com/dfinity/motoko/releases/tag/0.16.2)
+
+### Bitcoin canister
+
+Upgraded Bitcoin canister to [release/2025-07-02](https://github.com/dfinity/bitcoin-canister/releases/tag/release%2F2025-07-02)
+
+### Replica
+
+Updated replica to commit 615045e039c57ed842c689e49a07ab3de3a8a781.
+
+# 0.29.1
+
+### fix: ensure deterministic serialization of `tech_stack` metadata
+
+The `tech_stack` metadata was previously defined with `HashMap`, which resulted in non-deterministic serialization due to its random key ordering.
+This has been fixed by replacing it with `BTreeMap`, which sorts keys and guarantees consistent, deterministic output every time.
+
+## Dependencies
+
+### Motoko
+
+Updated Motoko to [0.16.1](https://github.com/dfinity/motoko/releases/tag/0.16.1)
+
+### Candid
+
+Updated candid_parser to 0.2.1.
+
+Comments applied to Candid elements will now become doc comments in dfx's generated bindings.
+
+```candid
+// Type comments
+type Ex = variant {
+  // Variant comments
+  Var: record {
+    // Field comments
+    field: nat;
+  }
+}
+// Service comments
+service : {
+  // Method comments
+  func : (Ex) -> ();
+}
+```
+
+### Candid
+
+Updated candid_parser to 0.2.1.
+
+Comments applied to Candid elements will now become doc comments in dfx's generated bindings.
+
+```candid
+// Type comments
+type Ex = variant {
+  // Variant comments
+  Var: record {
+    // Field comments
+    field: nat;
+  }
+}
+// Service comments
+service : {
+  // Method comments
+  func : (Ex) -> ();
+}
+```
+
+### Frontend canister
+
+- Module hash: 4014793c83ae0ff2d851a0c4e62f289a114d36bc1826f5579f55a70ff3c70551
+- https://github.com/dfinity/sdk/pull/4354
+
+# 0.29.0
+
+### feat: add dfx native support for aarch64-Linux
+
+Add dfx native support for aarch64-Linux.
+
+### feat: support canister snapshot download and upload.
+
+Added `dfx canister snapshot download` and `dfx canister snapshot upload` commands to download and upload the canister snapshot.
+
+## Dependencies
+
+### Motoko
+
+Updated Motoko to [0.15.1](https://github.com/dfinity/motoko/releases/tag/0.15.1)
+
+### Replica
+
+Updated replica to elected commit 615045e039c57ed842c689e49a07ab3de3a8a781.
+This incorporates the following executed proposals:
+
+- [137578](https://dashboard.internetcomputer.org/proposal/137578)
+- [137497](https://dashboard.internetcomputer.org/proposal/137497)
+- [137345](https://dashboard.internetcomputer.org/proposal/137345)
+- [137224](https://dashboard.internetcomputer.org/proposal/137224)
+
+# 0.28.0
+
+### fix: deps deploy works with Canister ID out of the ranges of the pocket-ic subnets
+
+The `dfx deps deploy` command didn't work when the pulled dependency's Canister ID is out of the ranges of the `pocket-ic` subnets.
+
+The removed `replica` had one subnet to cover all subnets. While the `pocket-ic` can dynamically create new subnet when trying to create a canister with specified ID.
+
+### chore: update bitcoin regtest configuration to be same as the bitcoin mainnet
+
+Update bitcoin `regtest` configuration to be same as the bitcoin `mainnet`.
+
+```
+fees = record {
+      get_current_fee_percentiles = 10_000_000 : nat;
+      get_utxos_maximum = 10_000_000_000 : nat;
+      get_block_headers_cycles_per_ten_instructions = 10 : nat;
+      get_current_fee_percentiles_maximum = 100_000_000 : nat;
+      send_transaction_per_byte = 20_000_000 : nat;
+      get_balance = 10_000_000 : nat;
+      get_utxos_cycles_per_ten_instructions = 10 : nat;
+      get_block_headers_base = 50_000_000 : nat;
+      get_utxos_base = 50_000_000 : nat;
+      get_balance_maximum = 100_000_000 : nat;
+      send_transaction_base = 5_000_000_000 : nat;
+      get_block_headers_maximum = 10_000_000_000 : nat;
+    };
+```
+
+You can get the fees by `get_config` API on the [BTC Mainnet Canister](https://dashboard.internetcomputer.org/canister/ghsi2-tqaaa-aaaan-aaaca-cai).
+
+### feat: `dfx start` now starts a single pocket-ic process to serve as the server and gateway
+
+If you were using the contents of the `pocket-ic-proxy-port` file to determine the port for
+the `/http_gateway` endpoint, you should instead use `dfx info pocketic-config-port`
+
+### feat: add dfx native support for aarch64-Darwin
+
+Add dfx native support for aarch64-Darwin. Using it may require editing your identities. See the [migration guide](./docs/migration/dfx-0.28.0-migration-guide.md) for more information.
+
+## Dependencies
+
+### Replica
+
+Updated replica to commit e915efecc8af90993ccfc499721ebe826aadba60.
+This incorporates the following executed proposals:
+
+- [137152](https://dashboard.internetcomputer.org/proposal/137152)
+- [137072](https://dashboard.internetcomputer.org/proposal/137072)
+- [136982](https://dashboard.internetcomputer.org/proposal/136982)
+- [136887](https://dashboard.internetcomputer.org/proposal/136887)
+- [136789](https://dashboard.internetcomputer.org/proposal/136789)
+- [136731](https://dashboard.internetcomputer.org/proposal/136731)
+- [136567](https://dashboard.internetcomputer.org/proposal/136567)
+
+### Motoko
+
+Updated Motoko to [0.14.13](https://github.com/dfinity/motoko/releases/tag/0.14.13)
+
+### Frontend canister
+
+Added missing fields to the asset canister .wasm: `SetAssetContentArguments.last_chunk : opt blob`, and `HttpResponse.upgrade: opt bool`
+
+- Module hash: 2f73b9e18b992f221a5fbab7fc59d840a9cbc461f7cfe875049f51354d23696c
+- https://github.com/dfinity/sdk/pull/4289
+- https://github.com/dfinity/sdk/pull/4285
+- https://github.com/dfinity/sdk/pull/4286
+
+# 0.27.0
+
 ### feat!: remove the 'native' replica
 
 The native replica is no longer bundled with dfx; dfx only uses PocketIC for local networks. Accordingly `dfx start --replica` and `dfx info replica-port` now report an error. See the [migration guide](./docs/migration/dfx-0.27.0-migration-guide.md) for more information.
+
+### feat!: Add safeguard to very short freezing threshold
+
+Similar to very long freezing thresholds, setting a freezing threshold below 1 week now requires confirmation with `--confirm-very-short-freezing-threshold` so that unexpected canister uninstallation is less likely.
 
 ### chore: removes the outdated `_language-service` command
 
@@ -24,11 +349,20 @@ Improve `dfx canister logs` with several options
 
 ### Motoko
 
-Updated Motoko to [0.14.9](https://github.com/dfinity/motoko/releases/tag/0.14.9)
+Updated Motoko to [0.14.8](https://github.com/dfinity/motoko/releases/tag/0.14.8)
 
 ### Bitcoin canister
 
 Upgraded Bitcoin canister to [release/2024-08-30](https://github.com/dfinity/bitcoin-canister/releases/tag/release%2F2024-08-30)
+
+### Replica
+
+Updated replica to elected commit f195ba756bc3bf170a2888699e5e74101fdac6ba.
+This incorporates the following executed proposals:
+
+- [136436](https://dashboard.internetcomputer.org/proposal/136436)
+- [136366](https://dashboard.internetcomputer.org/proposal/136366)
+- [136310](https://dashboard.internetcomputer.org/proposal/136310)
 
 # 0.26.1
 

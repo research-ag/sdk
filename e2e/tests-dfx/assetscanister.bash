@@ -747,7 +747,7 @@ check_permission_failure() {
 
   # fails with because %e6 is not valid utf-8 percent encoding
   assert_command_fail curl --fail -vv http://localhost:"$PORT"/%e6?canisterId="$ID"
-  assert_contains "500 Internal Server Error"
+  assert_contains "503 Service Unavailable"
 }
 
 @test "http_request percent-decodes urls" {
@@ -817,7 +817,7 @@ check_permission_failure() {
 
   assert_command_fail curl --fail -vv http://localhost:"$PORT"/%e6?canisterId="$ID"
   # fails because %e6 is not valid utf-8 percent encoding
-  assert_contains "500 Internal Server Error"
+  assert_contains "503 Service Unavailable"
 
   assert_command curl --fail -vv http://localhost:"$PORT"/%25?canisterId="$ID"
   assert_match "200 OK" "$stderr"
@@ -1061,6 +1061,53 @@ CHERRIES" "$stdout"
   assert_match 'length = 36'
   assert_match '"/sample-asset.txt"'
   assert_match 'length = 24'
+}
+
+@test "asset sync works with more than 100 assets" {
+  install_asset assetscanister
+
+  dfx_start
+  dfx canister create --all
+  dfx build
+  dfx canister install e2e_project_frontend
+
+  # Create 150 assets to test that pagination works correctly during sync
+  for i in $(seq 1 150); do
+    echo "test content $i" > "src/e2e_project_frontend/assets/test$(printf "%03d" "$i").txt"
+  done
+
+  # Initial deploy should sync all 150 assets
+  assert_command dfx deploy -v
+  assert_match 'test001.txt.*1/1'
+  assert_match 'test100.txt.*1/1'
+  assert_match 'test150.txt.*1/1'
+
+  # Verify all assets were uploaded by checking a few across the range
+  assert_command dfx canister call --query e2e_project_frontend get '(record{key="/test001.txt";accept_encodings=vec{"identity"}})'
+  assert_match "test content 1"
+  assert_command dfx canister call --query e2e_project_frontend get '(record{key="/test100.txt";accept_encodings=vec{"identity"}})'
+  assert_match "test content 100"
+  assert_command dfx canister call --query e2e_project_frontend get '(record{key="/test150.txt";accept_encodings=vec{"identity"}})'
+  assert_match "test content 150"
+
+  # Modify only one asset
+  echo "modified content 075" > "src/e2e_project_frontend/assets/test075.txt"
+
+  # Redeploy - should only sync the modified asset
+  assert_command dfx deploy -v
+  assert_match 'test075.txt.*1/1'
+  assert_match 'test001.txt.*is already installed'
+  assert_match 'test150.txt.*is already installed'
+
+  # Verify the modified asset was updated
+  assert_command dfx canister call --query e2e_project_frontend get '(record{key="/test075.txt";accept_encodings=vec{"identity"}})'
+  assert_match "modified content 075"
+
+  # Verify other assets remain unchanged
+  assert_command dfx canister call --query e2e_project_frontend get '(record{key="/test074.txt";accept_encodings=vec{"identity"}})'
+  assert_match "test content 74"
+  assert_command dfx canister call --query e2e_project_frontend get '(record{key="/test076.txt";accept_encodings=vec{"identity"}})'
+  assert_match "test content 76"
 }
 
 @test "identifies content type" {
@@ -1495,7 +1542,7 @@ EOF
   assert_command_fail dfx deploy
   assert_contains "does not actually configure any custom improvements over the standard policy"
 
-  # Security policy "hardened" defined for all assets, with overwiting default security headers
+  # Security policy "hardened" defined for all assets, with overwriting default security headers
   echo '[
     {
       "match": "**/*",
@@ -1640,7 +1687,7 @@ EOF
 
   # However, due to returning the wrong certificate, it fails with Err(InvalidResponseHashes)
   # see https://dfinity.atlassian.net/browse/SDK-1246
-  assert_contains "500 Internal Server Error"
+  assert_contains "503 Service Unavailable"
 
 
   assert_command dfx canister call e2e_project_frontend set_asset_properties '( record { key="/test_alias_file.html"; is_aliased=opt(opt(true))  })'
@@ -1687,7 +1734,7 @@ EOF
 
   # again see # see https://dfinity.atlassian.net/browse/SDK-1246, this should be 404
   # assert_match "404 Not Found" "$stderr"
-  assert_contains "500 Internal Server Error"
+  assert_contains "503 Service Unavailable"
 
   assert_command curl --fail -vv http://localhost:"$PORT"/index_test?canisterId="$ID"
   assert_match "200 OK" "$stderr"
@@ -2107,4 +2154,190 @@ EOF
   assert_match '"aaaaa-aa"'
   assert_command dfx canister call e2e_project_frontend list_permitted '(record { permission = variant { ManagePermissions }; })'
   assert_match "$(dfx identity get-principal)"
+}
+
+@test "ic_env cookie is set for html files" {
+  install_asset assetscanister
+  dfx_start
+
+  touch src/e2e_project_frontend/assets/index.html
+  echo "<html><body>Test</body></html>" > src/e2e_project_frontend/assets/index.html
+
+  dfx deploy
+
+  ID=$(dfx canister id e2e_project_frontend)
+  PORT=$(get_webserver_port)
+
+  IC_ENV_COOKIE_REGEX="ic_env=ic%5Froot%5Fkey%3D[0-9a-fA-F]+; SameSite=Lax"
+
+  # Request HTML file and verify ic_env cookie is set
+  assert_command curl -v "http://$ID.localhost:$PORT/index.html"
+  assert_match "set-cookie: $IC_ENV_COOKIE_REGEX"
+}
+
+@test "ic_env cookie contains PUBLIC_ environment variables" {
+  install_asset assetscanister
+  dfx_start
+
+  touch src/e2e_project_frontend/assets/index.html
+  echo "<html><body>Test</body></html>" > src/e2e_project_frontend/assets/index.html
+
+  dfx canister create --all
+  dfx build --all
+  dfx canister install e2e_project_frontend
+
+  ID=$(dfx canister id e2e_project_frontend)
+
+  set_canister_environment_variables "$ID" PUBLIC_TEST1=value1 PUBLIC_TEST2=value2
+
+  dfx deploy
+
+  PORT=$(get_webserver_port)
+
+  IC_ENV_COOKIE_REGEX="ic_env=ic%5Froot%5Fkey%3D[0-9a-fA-F]+%26PUBLIC%5FTEST1%3Dvalue1%26PUBLIC%5FTEST2%3Dvalue2; SameSite=Lax"
+
+  # Request HTML file and verify cookie contains PUBLIC_ variables
+  assert_command curl -v "http://$ID.localhost:$PORT/index.html"
+  assert_match "set-cookie: $IC_ENV_COOKIE_REGEX"
+}
+
+@test "ic_env cookie is not set for non-html files" {
+  install_asset assetscanister
+  dfx_start
+
+  touch src/e2e_project_frontend/assets/test.txt
+  echo "plain text file" > src/e2e_project_frontend/assets/test.txt
+  touch src/e2e_project_frontend/assets/script.js
+  echo "console.log('test');" > src/e2e_project_frontend/assets/script.js
+
+  dfx deploy
+
+  ID=$(dfx canister id e2e_project_frontend)
+  PORT=$(get_webserver_port)
+
+  # Request text file and verify no ic_env cookie is set
+  assert_command curl -v "http://$ID.localhost:$PORT/test.txt"
+  assert_not_match "set-cookie: ic_env="
+
+  # Request JS file and verify no ic_env cookie is set
+  assert_command curl -v "http://$ID.localhost:$PORT/script.js"
+  assert_not_match "set-cookie: ic_env="
+}
+
+@test "ic_env cookie is set only for PUBLIC_ prefixed environment variables" {
+  install_asset assetscanister
+  dfx_start
+
+  touch src/e2e_project_frontend/assets/app.html
+  echo "<html><body>App</body></html>" > src/e2e_project_frontend/assets/app.html
+
+  dfx canister create --all
+  dfx build --all
+  dfx canister install e2e_project_frontend
+
+  ID=$(dfx canister id e2e_project_frontend)
+
+  set_canister_environment_variables "$ID" PUBLIC_TEST1=value1 TEST2=value2
+
+  dfx deploy
+
+  PORT=$(get_webserver_port)
+
+  IC_ENV_COOKIE_REGEX_1="ic_env=ic%5Froot%5Fkey%3D[0-9a-fA-F]+%26PUBLIC%5FTEST1%3Dvalue1; SameSite=Lax"
+
+  assert_command curl -v "http://$ID.localhost:$PORT/app.html"
+  assert_match "set-cookie: $IC_ENV_COOKIE_REGEX_1"
+
+  # Redeploy with no PUBLIC_ prefixed (case sensitive!) environment variables
+  set_canister_environment_variables "$ID" public_TEST1=value1 TEST2=value2
+  dfx deploy
+
+  IC_ENV_COOKIE_REGEX_2="ic_env=ic%5Froot%5Fkey%3D[0-9a-fA-F]+; SameSite=Lax"
+
+  assert_command curl -v "http://$ID.localhost:$PORT/app.html"
+  assert_match "set-cookie: $IC_ENV_COOKIE_REGEX_2"
+}
+
+@test "ic_env cookie updates on redeploy with new environment variables" {
+  install_asset assetscanister
+  dfx_start
+
+  touch src/e2e_project_frontend/assets/app.html
+  echo "<html><body>App</body></html>" > src/e2e_project_frontend/assets/app.html
+  
+  dfx canister create --all
+  dfx build --all
+  dfx canister install e2e_project_frontend
+
+  ID=$(dfx canister id e2e_project_frontend)
+
+  set_canister_environment_variables "$ID" PUBLIC_TEST1=value1
+
+  dfx deploy
+
+  PORT=$(get_webserver_port)
+
+  IC_ENV_COOKIE_REGEX_1="ic_env=ic%5Froot%5Fkey%3D[0-9a-fA-F]+%26PUBLIC%5FTEST1%3Dvalue1; SameSite=Lax"
+
+  assert_command curl -v "http://$ID.localhost:$PORT/app.html"
+  assert_match "set-cookie: $IC_ENV_COOKIE_REGEX_1"
+
+  # Redeploy with additional PUBLIC_ variable
+  set_canister_environment_variables "$ID" PUBLIC_TEST1=value1 PUBLIC_TEST2=value2
+  dfx deploy
+
+  IC_ENV_COOKIE_REGEX_2="ic_env=ic%5Froot%5Fkey%3D[0-9a-fA-F]+%26PUBLIC%5FTEST1%3Dvalue1%26PUBLIC%5FTEST2%3Dvalue2; SameSite=Lax"
+
+  assert_command curl -v "http://$ID.localhost:$PORT/app.html"
+  assert_match "set-cookie: $IC_ENV_COOKIE_REGEX_2"
+}
+
+@test "local state hash matches canister state hash" {
+  install_asset assetscanister
+  dfx_start
+  
+  # Create some test assets
+  echo "test file 1" > src/e2e_project_frontend/assets/test1.txt
+  echo "test file 2" > src/e2e_project_frontend/assets/test2.txt
+  mkdir -p src/e2e_project_frontend/assets/subdir
+  echo "nested file" > src/e2e_project_frontend/assets/subdir/nested.txt
+  
+  # Deploy with debug logging to capture local state hash
+  assert_command dfx deploy --verbose
+  LOCAL_HASH=$(echo "$stderr" | grep "Computed state hash of assets:" | sed 's/.*Computed state hash of assets: //')
+  
+  # Call the canister's compute_state_hash method
+  assert_command dfx canister call e2e_project_frontend compute_state_hash '()'
+  CANISTER_HASH=$(echo "$stdout" | grep -o '"[0-9a-f]*"' | tr -d '"')
+  
+  # Verify hashes
+  echo "Local hash: $LOCAL_HASH"
+  echo "Canister hash: $CANISTER_HASH"
+  assert_eq "${#LOCAL_HASH}" "64"
+  assert_eq "${#CANISTER_HASH}" "64"
+  assert_eq "$LOCAL_HASH" "$CANISTER_HASH"
+  
+  # Now modify an existing asset and add a new one
+  echo "modified test file 1" > src/e2e_project_frontend/assets/test1.txt
+  echo "brand new file" > src/e2e_project_frontend/assets/test3.txt
+  mkdir -p src/e2e_project_frontend/assets/another
+  echo "another nested file" > src/e2e_project_frontend/assets/another/deep.txt
+  
+  # Redeploy with the changes
+  assert_command dfx deploy --verbose
+  LOCAL_HASH_2=$(echo "$stderr" | grep "Computed state hash of assets:" | sed 's/.*Computed state hash of assets: //')
+  
+  # Call the canister's compute_state_hash method again
+  assert_command dfx canister call e2e_project_frontend compute_state_hash '()'
+  CANISTER_HASH_2=$(echo "$stdout" | grep -o '"[0-9a-f]*"' | tr -d '"')
+  
+  # Verify new hashes
+  echo "Local hash after changes: $LOCAL_HASH_2"
+  echo "Canister hash after changes: $CANISTER_HASH_2"
+  assert_eq "${#LOCAL_HASH_2}" "64"
+  assert_eq "${#CANISTER_HASH_2}" "64"
+  assert_eq "$LOCAL_HASH_2" "$CANISTER_HASH_2"
+  
+  # Verify the hash changed after modifications
+  assert_neq "$LOCAL_HASH" "$LOCAL_HASH_2"
 }

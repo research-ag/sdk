@@ -7,10 +7,14 @@ if [ -z ${1+x} ] || [ ! "$0" -ef ./scripts/update-motoko.sh ]; then
     echo "Usage: run ./scripts/update-motoko.sh <version-to-update-to> in repo root"
     exit 1
 fi
-if ! command -v curl jq sponge &>/dev/null; then
-    echo "This script requires curl, jq, and moreutils to be installed"
-    exit 1
-fi
+
+for cmd in curl jq sponge; do
+    if ! command -v "$cmd" &>/dev/null; then
+        echo "'$cmd' was not found."
+        echo "This script requires curl, jq, and moreutils to be installed"
+        exit 1
+    fi
+done
 
 urlencode() {
     printf '%s' "$1" | jq -sRr @uri
@@ -25,7 +29,12 @@ motoko_base_sha=$(curl --proto '=https' --tlsv1.2 -sSfL "$motoko_base_url" | sha
 jq '.common."motoko-base" = {url: $url, sha256: $sha256, version: $version}' --arg version "$version" \
     --arg url "$motoko_base_url" --arg sha256 "$motoko_base_sha" "$sources" | sponge "$sources"
 
-declare -A variants=([x86_64-darwin]=Darwin-x86_64 [x86_64-linux]=Linux-x86_64)
+motoko_core_url=$(printf 'https://github.com/dfinity/motoko/releases/download/%s/motoko-core.tar.gz' "$(urlencode "$version")")
+motoko_core_sha=$(curl --proto '=https' --tlsv1.2 -sSfL "$motoko_core_url" | sha256sum | head -c 64)
+jq '.common."motoko-core" = {url: $url, sha256: $sha256, version: $version}' --arg version "$version" \
+    --arg url "$motoko_core_url" --arg sha256 "$motoko_core_sha" "$sources" | sponge "$sources"
+
+declare -A variants=([x86_64-darwin]=Darwin-x86_64 [x86_64-linux]=Linux-x86_64 [arm64-darwin]=Darwin-arm64 [arm64-linux]=Linux-aarch64)
 for platform in "${!variants[@]}"; do
     motoko_url=$(printf 'https://github.com/dfinity/motoko/releases/download/%s/motoko-%s-%s.tar.gz' \
         "$(urlencode "$version")" "$(urlencode "${variants[$platform]}")" "$(urlencode "$version")")

@@ -17,6 +17,7 @@ type SetAssetContentArguments = record {
   key: Key;
   content_encoding: text;
   chunk_ids: vec ChunkId;
+  last_chunk: opt blob;
   sha256: opt blob;
 };
 
@@ -80,6 +81,7 @@ type HttpResponse = record {
   headers: vec HeaderField;
   body: blob;
   streaming_strategy: opt StreamingStrategy;
+  upgrade: opt bool;
 };
 
 type StreamingCallbackHttpResponse = record {
@@ -119,6 +121,11 @@ type ConfigureArguments = record {
   max_batches: opt opt nat64;
   max_chunks: opt opt nat64;
   max_bytes: opt opt nat64;
+};
+
+type StateInfo = record {
+  last_state_update_timestamp: nat64;
+  state_hash: opt text;
 };
 
 type Permission = variant {
@@ -187,7 +194,7 @@ service: (asset_canister_args: opt AssetCanisterArgs) -> {
     sha256: opt blob;  // sha256 of entire asset encoding, calculated by dfx and passed in SetAssetContentArguments
   }) -> (record { content: blob }) query;
 
-  list : (record {}) -> (vec record {
+  list : (record { start: opt nat; length: opt nat }) -> (vec record {
     key: Key;
     content_type: text;
     encodings: vec record {
@@ -196,6 +203,10 @@ service: (asset_canister_args: opt AssetCanisterArgs) -> {
       length: nat; // Size of this encoding's blob. Calculated when uploading assets.
       modified: Time;
     };
+    max_age: opt nat64;
+    headers: opt vec HeaderField;
+    allow_raw_access: opt bool;
+    is_aliased: opt bool;
   }) query;
 
   certified_tree : (record {}) -> (record {
@@ -219,6 +230,12 @@ service: (asset_canister_args: opt AssetCanisterArgs) -> {
 
   // Compute a hash over the CommitBatchArguments.  Call until it returns Some(evidence).
   compute_evidence: (ComputeEvidenceArguments) -> (opt blob);
+
+  // Compute a hash over the canister content.  Call until it returns Some(hash).
+  compute_state_hash: () -> (opt text);
+
+  // Get information about the current state of the canister
+  get_state_info: () -> (StateInfo) query;
 
   // Delete a batch that has been created, or proposed for commit, but not yet committed
   delete_batch: (DeleteBatchArguments) -> ();

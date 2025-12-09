@@ -1,14 +1,16 @@
 use crate::lib::environment::Environment;
 use crate::lib::progress_bar::ProgressBar;
 use ic_asset::{AssetSyncProgressRenderer, AssetSyncState};
-use std::cell::OnceCell;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{
+    OnceLock,
+    atomic::{AtomicUsize, Ordering},
+};
 
 pub struct EnvAssetSyncProgressRenderer<'a> {
     pub env: &'a dyn Environment,
 
     topline: ProgressBar,
-    bytes: OnceCell<ProgressBar>,
+    bytes: OnceLock<ProgressBar>,
 
     // getting properties of assets already in canister
     total_assets_to_retrieve_properties: AtomicUsize,
@@ -37,7 +39,7 @@ impl<'a> EnvAssetSyncProgressRenderer<'a> {
         let total_assets = AtomicUsize::new(0);
         let complete_assets = AtomicUsize::new(0);
 
-        let bytes = OnceCell::new(); // env.new_spinner("Uploading content...".into());
+        let bytes = OnceLock::new(); // env.new_spinner("Uploading content...".into());
         let total_bytes = AtomicUsize::new(0);
         let uploaded_bytes = AtomicUsize::new(0);
 
@@ -70,27 +72,27 @@ impl<'a> EnvAssetSyncProgressRenderer<'a> {
             .load(Ordering::SeqCst);
         let got = self.assets_retrieved_properties.load(Ordering::SeqCst);
         self.topline
-            .set_message(format!("Read asset properties: {}/{}", got, total).into());
+            .set_message(format!("Read asset properties: {got}/{total}").into());
     }
 
     fn update_assets(&self) {
         let total = self.total_assets.load(Ordering::SeqCst);
         let complete = self.complete_assets.load(Ordering::SeqCst);
         self.topline
-            .set_message(format!("Staged: {}/{} assets", complete, total).into());
+            .set_message(format!("Staged: {complete}/{total} assets").into());
     }
 
     fn update_bytes(&self) {
         let uploaded = self.uploaded_bytes.load(Ordering::SeqCst);
         self.get_bytes_progress_bar()
-            .set_message(format!("Uploaded content: {} bytes", uploaded).into());
+            .set_message(format!("Uploaded content: {uploaded} bytes").into());
     }
 
     fn update_commit_batch(&self) {
         let total = self.total_batch_operations.load(Ordering::SeqCst);
         let committed = self.committed_batch_operations.load(Ordering::SeqCst);
         self.topline
-            .set_message(format!("Committed batch: {}/{} operations", committed, total).into());
+            .set_message(format!("Committed batch: {committed}/{total} operations").into());
     }
 }
 

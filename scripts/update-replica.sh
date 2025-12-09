@@ -7,16 +7,23 @@ if [ -z ${1+x} ] || [ ! "$0" -ef ./scripts/update-replica.sh ]; then
     echo "Usage: run ./scripts/update-replica.sh <SHA-to-update-to> in repo root"
     exit 1
 fi
-if ! command -v jq sponge curl cargo &>/dev/null; then
-    echo "This script requires Rust, jq, moreutils, and curl to be installed"
-    exit 1
-fi
+
+for cmd in curl jq sponge; do
+    if ! command -v "$cmd" &>/dev/null; then
+        echo "'$cmd' was not found."
+        echo "This script requires curl, jq, and moreutils to be installed"
+        exit 1
+    fi
+done
+
 sources="src/dfx/assets/dfx-asset-sources.json"
 
 rev=$1
 echo "Updating sources to rev ${rev}"
 jq '."replica-rev" = $rev' --arg rev "$rev" "$sources" | sponge "$sources"
-for platform in x86_64-darwin x86_64-linux; do
+
+declare -a platforms=("x86_64-darwin" "x86_64-linux" "arm64-darwin" "arm64-linux")
+for platform in "${platforms[@]}"; do
     pocketic_url=$(printf 'https://download.dfinity.systems/ic/%s/binaries/%s/pocket-ic.gz' "$rev" "$platform")
     pocketic_sha=$(curl --proto '=https' --tlsv1.2 -sSfL "$pocketic_url" | sha256sum | head -c 64)
     jq '.[$platform]."pocket-ic" = {url: $url, sha256: $sha256, rev: $rev}' --arg platform "$platform" --arg rev "$rev" \

@@ -3,7 +3,7 @@ use crate::config::dfx_version;
 use crate::lib::error::DfxResult;
 use crate::lib::progress_bar::ProgressBar;
 use crate::lib::telemetry::{CanisterRecord, Telemetry};
-use crate::lib::warning::{is_warning_disabled, DfxWarning::MainnetPlainTextIdentity};
+use crate::lib::warning::{DfxWarning::MainnetPlainTextIdentity, is_warning_disabled};
 use anyhow::{anyhow, bail};
 use candid::Principal;
 use dfx_core::config::model::canister_id_store::CanisterIdStore;
@@ -23,13 +23,13 @@ use pocket_ic::nonblocking::PocketIc;
 use semver::Version;
 use slog::{Logger, Record};
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use url::Url;
 
-pub trait Environment {
+#[allow(unused)]
+pub trait Environment: Send + Sync {
     fn get_cache(&self) -> VersionCache;
     fn get_config(&self) -> Result<Option<Arc<Config>>, LoadDfxConfigError>;
     fn get_networks_config(&self) -> Arc<NetworksConfig>;
@@ -60,7 +60,7 @@ pub trait Environment {
     fn get_verbose_level(&self) -> i64;
     fn new_spinner(&self, message: Cow<'static, str>) -> ProgressBar;
     fn with_suspend_all_spinners(&self, f: Box<dyn FnOnce() + '_>); // box needed for dyn Environment
-    fn new_progress(&self, message: &str) -> ProgressBar;
+    fn new_progress(&self, total_size: u64) -> ProgressBar;
 
     fn new_identity_manager(&self) -> Result<IdentityManager, NewIdentityManagerError> {
         IdentityManager::new(
@@ -96,7 +96,7 @@ pub enum ProjectConfig {
 }
 
 pub struct EnvironmentImpl {
-    project_config: RefCell<ProjectConfig>,
+    project_config: Mutex<ProjectConfig>,
     shared_networks_config: Arc<NetworksConfig>,
     tool_config: Arc<Mutex<ToolConfig>>,
 
@@ -123,7 +123,7 @@ impl EnvironmentImpl {
 
         Ok(EnvironmentImpl {
             cache: VersionCache::with_version(&version),
-            project_config: RefCell::new(ProjectConfig::NotLoaded),
+            project_config: Mutex::new(ProjectConfig::NotLoaded),
             shared_networks_config: Arc::new(shared_networks_config),
             tool_config: Arc::new(Mutex::new(tool_config)),
             version: version.clone(),
@@ -186,7 +186,7 @@ impl EnvironmentImpl {
             }
             ProjectConfig::Loaded(Arc::new(config))
         });
-        self.project_config.replace(project_config);
+        *self.project_config.lock().unwrap() = project_config;
         Ok(())
     }
 }
@@ -197,11 +197,15 @@ impl Environment for EnvironmentImpl {
     }
 
     fn get_config(&self) -> Result<Option<Arc<Config>>, LoadDfxConfigError> {
-        if matches!(*self.project_config.borrow(), ProjectConfig::NotLoaded) {
+        if matches!(
+            *self.project_config.lock().unwrap(),
+            ProjectConfig::NotLoaded
+        ) {
             self.load_config()?;
         }
 
-        let config = if let ProjectConfig::Loaded(ref config) = *self.project_config.borrow() {
+        let config = if let ProjectConfig::Loaded(ref config) = *self.project_config.lock().unwrap()
+        {
             Some(Arc::clone(config))
         } else {
             None
@@ -290,8 +294,13 @@ impl Environment for EnvironmentImpl {
         self.spinners.suspend(f);
     }
 
-    fn new_progress(&self, _message: &str) -> ProgressBar {
-        ProgressBar::discard()
+    fn new_progress(&self, total_size: u64) -> ProgressBar {
+        // Only show the progress bar if the level is INFO or more.
+        if self.verbose_level >= 0 {
+            ProgressBar::new_progress(total_size, &self.spinners)
+        } else {
+            ProgressBar::discard()
+        }
     }
 
     fn get_selected_identity(&self) -> Option<&String> {
@@ -376,7 +385,7 @@ impl<'a> AgentEnvironment<'a> {
                     Some(port) => {
                         let mut socket_addr = local_server_descriptor.bind_address;
                         socket_addr.set_port(port);
-                        let url = format!("http://{}", socket_addr);
+                        let url = format!("http://{socket_addr}");
                         let url = Url::parse(&url)
                             .map_err(|e| UriError::UrlParseError(url.to_string(), e))?;
                         Some(create_pocketic(&url))
@@ -477,8 +486,8 @@ impl<'a> Environment for AgentEnvironment<'a> {
         self.backend.with_suspend_all_spinners(f);
     }
 
-    fn new_progress(&self, message: &str) -> ProgressBar {
-        self.backend.new_progress(message)
+    fn new_progress(&self, total_size: u64) -> ProgressBar {
+        self.backend.new_progress(total_size)
     }
 
     fn get_selected_identity(&self) -> Option<&String> {
@@ -600,7 +609,7 @@ pub mod test_env {
         fn new_identity_manager(&self) -> Result<IdentityManager, NewIdentityManagerError> {
             unimplemented!()
         }
-        fn new_progress(&self, _message: &str) -> ProgressBar {
+        fn new_progress(&self, _total_size: u64) -> ProgressBar {
             ProgressBar::discard()
         }
         fn with_suspend_all_spinners(&self, f: Box<dyn FnOnce() + '_>) {

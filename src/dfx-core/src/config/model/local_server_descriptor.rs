@@ -1,9 +1,9 @@
 use crate::config::model::bitcoin_adapter;
 use crate::config::model::canister_http_adapter::HttpAdapterLogLevel;
 use crate::config::model::dfinity::{
-    to_socket_addr, ConfigDefaultsBitcoin, ConfigDefaultsCanisterHttp, ConfigDefaultsProxy,
-    ConfigDefaultsReplica, ReplicaLogLevel, ReplicaSubnetType, DEFAULT_PROJECT_LOCAL_BIND,
-    DEFAULT_SHARED_LOCAL_BIND,
+    ConfigDefaultsBitcoin, ConfigDefaultsCanisterHttp, ConfigDefaultsDogecoin, ConfigDefaultsProxy,
+    ConfigDefaultsReplica, DEFAULT_PROJECT_LOCAL_BIND, DEFAULT_SHARED_LOCAL_BIND, ReplicaLogLevel,
+    ReplicaSubnetType, to_socket_addr,
 };
 use crate::config::model::replica_config::CachedConfig;
 use crate::error::network_config::{
@@ -13,9 +13,10 @@ use crate::error::structured_file::StructuredFileError;
 use crate::json::load_json_file;
 use crate::json::structure::SerdeVec;
 use serde::{Deserialize, Serialize};
-use slog::{debug, info, Logger};
+use slog::{Logger, debug, info};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use time::OffsetDateTime;
 
 use super::replica_config::CachedReplicaConfig;
@@ -45,6 +46,7 @@ pub struct LocalServerDescriptor {
     pub bind_address: SocketAddr,
 
     pub bitcoin: ConfigDefaultsBitcoin,
+    pub dogecoin: ConfigDefaultsDogecoin,
     pub canister_http: ConfigDefaultsCanisterHttp,
     pub proxy: ConfigDefaultsProxy,
     pub replica: ConfigDefaultsReplica,
@@ -67,6 +69,7 @@ impl LocalServerDescriptor {
         data_directory: PathBuf,
         bind: String,
         bitcoin: ConfigDefaultsBitcoin,
+        dogecoin: ConfigDefaultsDogecoin,
         canister_http: ConfigDefaultsCanisterHttp,
         proxy: ConfigDefaultsProxy,
         replica: ConfigDefaultsReplica,
@@ -80,6 +83,7 @@ impl LocalServerDescriptor {
             settings_digest,
             bind_address,
             bitcoin,
+            dogecoin,
             canister_http,
             proxy,
             replica,
@@ -117,16 +121,6 @@ impl LocalServerDescriptor {
     /// This file contains the pid of the pocket-ic replica process
     pub fn pocketic_pid_path(&self) -> PathBuf {
         self.data_directory.join("pocket-ic-pid")
-    }
-
-    /// This file contains the configuration port of the pocket-ic gateway process
-    pub fn pocketic_proxy_port_path(&self) -> PathBuf {
-        self.data_directory.join("pocket-ic-proxy-port")
-    }
-
-    /// This file contains the pid of the pocket-ic gateway process
-    pub fn pocketic_proxy_pid_path(&self) -> PathBuf {
-        self.data_directory.join("pocket-ic-proxy-pid")
     }
 
     /// Returns whether the local server is PocketIC (as opposed to the replica)
@@ -194,9 +188,21 @@ impl LocalServerDescriptor {
     }
 
     pub fn with_bitcoin_enabled(self) -> LocalServerDescriptor {
-        let bitcoin = ConfigDefaultsBitcoin {
-            enabled: true,
-            ..self.bitcoin
+        // if we're enabling bitcoin and there are no bitcoin nodes specified,
+        // we will add a default node at 127.0.0.1:18444
+        let bitcoin = if self.bitcoin.nodes.is_none()
+            || self.bitcoin.nodes.clone().is_some_and(|n| n.is_empty())
+        {
+            ConfigDefaultsBitcoin {
+                enabled: true,
+                nodes: Some(vec![SocketAddr::from_str("127.0.0.1:18444").unwrap()]),
+                ..self.bitcoin
+            }
+        } else {
+            ConfigDefaultsBitcoin {
+                enabled: true,
+                ..self.bitcoin
+            }
         };
         Self { bitcoin, ..self }
     }
@@ -207,6 +213,33 @@ impl LocalServerDescriptor {
             ..self.bitcoin
         };
         Self { bitcoin, ..self }
+    }
+
+    pub fn with_dogecoin_enabled(self) -> LocalServerDescriptor {
+        // if we're enabling dogecoin and there are no dogecoin nodes specified,
+        // we will add a default node at 127.0.0.1:18444
+        let dogecoin = if self.dogecoin.nodes.is_none()
+            || self.dogecoin.nodes.clone().is_some_and(|n| n.is_empty())
+        {
+            ConfigDefaultsDogecoin {
+                enabled: true,
+                nodes: Some(vec![SocketAddr::from_str("127.0.0.1:18444").unwrap()]),
+            }
+        } else {
+            ConfigDefaultsDogecoin {
+                enabled: true,
+                ..self.dogecoin
+            }
+        };
+        Self { dogecoin, ..self }
+    }
+
+    pub fn with_dogecoin_nodes(self, nodes: Vec<SocketAddr>) -> LocalServerDescriptor {
+        let dogecoin = ConfigDefaultsDogecoin {
+            nodes: Some(nodes),
+            ..self.dogecoin
+        };
+        Self { dogecoin, ..self }
     }
 
     pub fn with_proxy_domains(self, domains: Vec<String>) -> LocalServerDescriptor {
@@ -235,7 +268,7 @@ impl LocalServerDescriptor {
         .unwrap();
 
         let diffs = if self.bind_address != default_bind {
-            format!(" (default: {:?})", default_bind)
+            format!(" (default: {default_bind:?})")
         } else {
             "".to_string()
         };
@@ -249,7 +282,7 @@ impl LocalServerDescriptor {
                 default_nodes.clone()
             };
             let diffs: String = if nodes != default_nodes {
-                format!(" (default: {:?})", default_nodes)
+                format!(" (default: {default_nodes:?})")
             } else {
                 "".to_string()
             };
