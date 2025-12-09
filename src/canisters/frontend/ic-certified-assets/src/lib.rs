@@ -746,12 +746,12 @@ macro_rules! export_canister_methods {
 
 #[derive(CandidType)]
 pub struct BalanceResult<TCycles> {
-    amount: TCycles,
+    pub amount: TCycles,
 }
 
 pub fn wallet_balance() -> BalanceResult<u64> {
     BalanceResult {
-        amount: ic_cdk::api::canister_balance128()
+        amount: ic_cdk::api::canister_cycle_balance()
             .try_into()
             .expect("Balance exceeded a 64-bit value; call `wallet_balance128`"),
     }
@@ -759,7 +759,7 @@ pub fn wallet_balance() -> BalanceResult<u64> {
 
 pub fn wallet_balance128() -> BalanceResult<u128> {
     BalanceResult {
-        amount: ic_cdk::api::canister_balance128(),
+        amount: ic_cdk::api::canister_cycle_balance(),
     }
 }
 
@@ -787,17 +787,15 @@ pub async fn wallet_send(
 }
 
 pub async fn wallet_send128(args: SendCyclesArgs<u128>) -> Result<(), String> {
-    ic_cdk::api::call::call_with_payment128::<(DepositCyclesArgs,), ()>(
+    ic_cdk::call::Call::unbounded_wait(
         Principal::management_canister(),
         "deposit_cycles",
-        (DepositCyclesArgs {
-            canister_id: args.canister,
-        },),
-        args.amount,
     )
+    .with_arg((DepositCyclesArgs { canister_id: args.canister },))
+    .with_cycles(args.amount)
     .await
     .map_err(|(code, msg)| {
-        let refund = ic_cdk::api::call::msg_cycles_refunded128();
+        let refund = ic_cdk::api::msg_cycles_refunded();
         format!(
             "Cycles sent: {}\nCycles refunded: {}\nAn error happened during the call: {}: {}",
             args.amount, refund, code as u8, msg
