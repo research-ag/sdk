@@ -723,14 +723,19 @@ macro_rules! export_canister_methods {
         #[$crate::ic_certified_assets_update(guard = "__ic_certified_assets_is_controller")]
         #[$crate::ic_certified_assets_candid_method(update)]
         async fn wallet_send(canister: candid::Principal, amount: u64) -> Result<(), String> {
-            $crate::wallet_send($crate::SendCyclesArgs { canister, amount }).await
+            $crate::wallet_send(canister, amount).await
         }
 
         // TCYCLES minting: deposit cycles to TCYCLES ledger account
         #[$crate::ic_certified_assets_update(guard = "__ic_certified_assets_is_controller")]
         #[$crate::ic_certified_assets_candid_method(update)]
-        async fn tcycles_deposit(to: $crate::Account, amount: u64) {
-            if let Err(msg) = $crate::tcycles_deposit(to, amount, None).await {
+        async fn tcycles_deposit(
+            owner: candid::Principal,
+            subaccount: Option<ic_certified_assets_ByteBuf>,
+            amount: u64,
+            memo: Option<ic_certified_assets_ByteBuf>,
+        ) {
+            if let Err(msg) = $crate::tcycles_deposit(owner, subaccount, amount, memo).await {
                 ic_cdk::trap(&msg);
             }
         }
@@ -738,59 +743,63 @@ macro_rules! export_canister_methods {
 }
 
 // Cycle Management
-
-// TCYCLES Ledger Integration
-// This section defines minimal Candid-compatible types to interact with the
-// TCYCLES ledger canister and an update method to mint TCYCLES by depositing
-// this canister's cycles to a provided TCYCLES account.
-
-use candid::Nat as __NatForTcycles;
-use serde_bytes::ByteBuf as __BlobForTcycles;
-
 #[derive(CandidType, Deserialize, Clone, Debug)]
 pub struct Account {
     pub owner: Principal,
-    pub subaccount: Option<__BlobForTcycles>,
+    pub subaccount: Option<ic_certified_assets_ByteBuf>,
 }
 
 #[derive(CandidType, Deserialize, Clone, Debug)]
 pub struct DepositArgs {
     pub to: Account,
-    pub memo: Option<__BlobForTcycles>,
-}
-
-pub type BlockIndex = __NatForTcycles;
-
-#[derive(CandidType, Deserialize, Clone, Debug)]
-pub struct DepositResult {
-    pub balance: __NatForTcycles,
-    pub block_index: BlockIndex,
+    pub memo: Option<ic_certified_assets_ByteBuf>,
 }
 
 /// Mints TCYCLES by depositing this canister's cycles to the TCYCLES ledger.
 /// Only controllers can call this method (guard is applied in the export macro).
 pub async fn tcycles_deposit(
-    to: Account,
+    owner: Principal,
+    subaccount: Option<ic_certified_assets_ByteBuf>,
     amount: u64,
-    memo: Option<__BlobForTcycles>,
+    memo: Option<ic_certified_assets_ByteBuf>,
 ) -> Result<(), String> {
     let ledger = Principal::from_text("um5iw-rqaaa-aaaaq-qaaba-cai")
         .expect("Invalid TCYCLES ledger principal");
 
+    // Log intent before performing the deposit call.
+    ic_cdk::println!(
+        "tcycles_deposit: calling ledger.deposit; ledger={}, amount={}, owner={}, memo_len={}",
+        ledger,
+        amount,
+        owner,
+        memo.as_ref().map(|b| b.len()).unwrap_or(0)
+    );
+
     // Perform the deposit call while attaching the desired cycle amount.
-    ic_cdk::call::Call::unbounded_wait(ledger, "deposit")
-        .with_arg((DepositArgs { to, memo },))
+    let result = ic_cdk::call::Call::unbounded_wait(ledger, "deposit")
+        .with_arg(DepositArgs { to: Account { owner, subaccount }, memo })
         .with_cycles(amount as u128)
-        .await
-        .map_err(|e: ic_cdk::call::CallFailed| {
+        .await;
+
+    match result {
+        Ok(_) => {
+            ic_cdk::println!("tcycles_deposit: deposit call succeeded");
+            Ok(())
+        }
+        Err(e) => {
             let refund = ic_cdk::api::msg_cycles_refunded();
-            format!(
+            ic_cdk::println!(
+                "tcycles_deposit: deposit call failed; sent={}, refunded={}, error={}",
+                amount,
+                refund,
+                e
+            );
+            Err(format!(
                 "Cycles sent: {}\nCycles refunded: {}\nAn error happened during the call: {}",
                 amount, refund, e
-            )
-        })?;
-
-    Ok(())
+            ))
+        }
+    }
 }
 
 // Return the cycle balance of this canister.
@@ -810,24 +819,14 @@ pub fn wallet_balance() -> BalanceResult<u64> {
 
 /// Send cycles to another canister.
 
-#[derive(CandidType, Deserialize)]
-pub struct SendCyclesArgs<TCycles> {
-    pub canister: Principal,
-    pub amount: TCycles,
-}
-
 #[derive(CandidType)]
 struct DepositCyclesArgs {
     canister_id: Principal,
 }
 
-pub async fn wallet_send(
-    SendCyclesArgs { canister, amount }: SendCyclesArgs<u64>,
-) -> Result<(), String> {
+pub async fn wallet_send(canister: Principal, amount: u64) -> Result<(), String> {
     ic_cdk::call::Call::unbounded_wait(Principal::management_canister(), "deposit_cycles")
-        .with_arg((DepositCyclesArgs {
-            canister_id: canister,
-        },))
+        .with_arg(DepositCyclesArgs { canister_id: canister })
         .with_cycles(amount as u128)
         .await
         .map_err(|e: ic_cdk::call::CallFailed| {
@@ -843,7 +842,7 @@ pub async fn wallet_send(
 
 #[test]
 fn candid_interface_compatibility() {
-    use candid_parser::utils::{CandidSource, service_compatible};
+    use candid_parser::utils::{service_compatible, CandidSource};
     use std::path::PathBuf;
 
     export_canister_methods!();
