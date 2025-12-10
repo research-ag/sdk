@@ -24,7 +24,6 @@ use asset_certification::types::{certification::AssetKey, rc_bytes::RcBytes};
 use candid::CandidType;
 use candid::Principal;
 use ic_cdk::api::{canister_self, certified_data_set, data_certificate, msg_caller, trap};
-use serde::Deserialize;
 use std::cell::RefCell;
 
 // Re-export for use in macros
@@ -722,37 +721,19 @@ macro_rules! export_canister_methods {
         // Cycle management updates
         #[$crate::ic_certified_assets_update(guard = "__ic_certified_assets_is_controller")]
         #[$crate::ic_certified_assets_candid_method(update)]
-        async fn wallet_send(canister: candid::Principal, amount: u64) -> Result<(), String> {
+        async fn wallet_send(types::WalletSendArg { canister, amount }: types::WalletSendArg) -> Result<(), String> {
             $crate::wallet_send(canister, amount).await
         }
 
         // TCYCLES minting: deposit cycles to TCYCLES ledger account
         #[$crate::ic_certified_assets_update(guard = "__ic_certified_assets_is_controller")]
         #[$crate::ic_certified_assets_candid_method(update)]
-        async fn tcycles_deposit(
-            owner: candid::Principal,
-            subaccount: Option<ic_certified_assets_ByteBuf>,
-            amount: u64,
-            memo: Option<ic_certified_assets_ByteBuf>,
-        ) {
+        async fn tcycles_deposit(types::TCyclesDepositArg { deposit_args: types::DepositArgs { to : types::Icrc1Account { owner, subaccount }, memo }, amount }: types::TCyclesDepositArg) {
             if let Err(msg) = $crate::tcycles_deposit(owner, subaccount, amount, memo).await {
                 ic_cdk::trap(&msg);
             }
         }
     };
-}
-
-// Cycle Management
-#[derive(CandidType, Deserialize, Clone, Debug)]
-pub struct Account {
-    pub owner: Principal,
-    pub subaccount: Option<ic_certified_assets_ByteBuf>,
-}
-
-#[derive(CandidType, Deserialize, Clone, Debug)]
-pub struct DepositArgs {
-    pub to: Account,
-    pub memo: Option<ic_certified_assets_ByteBuf>,
 }
 
 /// Mints TCYCLES by depositing this canister's cycles to the TCYCLES ledger.
@@ -765,35 +746,16 @@ pub async fn tcycles_deposit(
 ) -> Result<(), String> {
     let ledger = Principal::from_text("um5iw-rqaaa-aaaaq-qaaba-cai")
         .expect("Invalid TCYCLES ledger principal");
-
-    // Log intent before performing the deposit call.
-    ic_cdk::println!(
-        "tcycles_deposit: calling ledger.deposit; ledger={}, amount={}, owner={}, memo_len={}",
-        ledger,
-        amount,
-        owner,
-        memo.as_ref().map(|b| b.len()).unwrap_or(0)
-    );
-
-    // Perform the deposit call while attaching the desired cycle amount.
     let result = ic_cdk::call::Call::unbounded_wait(ledger, "deposit")
-        .with_arg(DepositArgs { to: Account { owner, subaccount }, memo })
+        .with_arg(DepositArgs { to: Icrc1Account { owner, subaccount }, memo })
         .with_cycles(amount as u128)
         .await;
-
     match result {
         Ok(_) => {
-            ic_cdk::println!("tcycles_deposit: deposit call succeeded");
             Ok(())
         }
         Err(e) => {
             let refund = ic_cdk::api::msg_cycles_refunded();
-            ic_cdk::println!(
-                "tcycles_deposit: deposit call failed; sent={}, refunded={}, error={}",
-                amount,
-                refund,
-                e
-            );
             Err(format!(
                 "Cycles sent: {}\nCycles refunded: {}\nAn error happened during the call: {}",
                 amount, refund, e

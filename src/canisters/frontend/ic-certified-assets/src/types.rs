@@ -235,3 +235,27 @@ pub struct SetPermissions {
     pub commit: Vec<Principal>,
     pub manage_permissions: Vec<Principal>,
 }
+
+#[derive(Clone, Debug, CandidType, Deserialize)]
+pub struct WalletSendArg {
+    pub canister: Principal,
+    pub amount: u64,
+}
+
+#[derive(CandidType, Deserialize, Clone, Debug)]
+pub struct Icrc1Account {
+    pub owner: Principal,
+    pub subaccount: Option<ByteBuf>,
+}
+
+#[derive(CandidType, Deserialize, Clone, Debug)]
+pub struct DepositArgs {
+    pub to: Icrc1Account,
+    pub memo: Option<ByteBuf>,
+}
+
+#[derive(Clone, Debug, CandidType, Deserialize)]
+pub struct TCyclesDepositArg {
+    pub deposit_args: DepositArgs,
+    pub amount: u64,
+}

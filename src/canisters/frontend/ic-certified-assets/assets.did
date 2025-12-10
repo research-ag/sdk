@@ -287,6 +287,6 @@ service: (asset_canister_args: opt AssetCanisterArgs) -> {
 
   // Cycle Management
   wallet_balance: () -> (record { amount: nat64 }) query;
-  wallet_send: (principal, nat64) -> (WalletResult);
-  tcycles_deposit: (principal, opt blob, nat64, opt blob) -> ();
+  wallet_send: (record { canister: principal; amount: nat64 }) -> (WalletResult);
+  tcycles_deposit: (record { deposit_args : record { to : record { owner: principal; subaccount: opt blob }; memo : opt blob }; amount: nat64 }) -> ();
 }
