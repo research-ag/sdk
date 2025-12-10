@@ -21,6 +21,7 @@ use crate::{
     types::*,
 };
 use asset_certification::types::{certification::AssetKey, rc_bytes::RcBytes};
+use candid::CandidType;
 use candid::Principal;
 use ic_cdk::api::{canister_self, certified_data_set, data_certificate, msg_caller, trap};
 use std::cell::RefCell;
@@ -455,6 +456,13 @@ macro_rules! export_canister_methods {
             $crate::api_version()
         }
 
+        // Cycle management queries
+        #[$crate::ic_certified_assets_query(guard = "__ic_certified_assets_is_controller")]
+        #[$crate::ic_certified_assets_candid_method(query)]
+        fn wallet_balance() -> $crate::BalanceResult<u64> {
+            $crate::wallet_balance()
+        }
+
         #[$crate::ic_certified_assets_query]
         #[$crate::ic_certified_assets_candid_method(query)]
         fn retrieve(
@@ -709,7 +717,103 @@ macro_rules! export_canister_methods {
         fn validate_configure(arg: types::ConfigureArguments) -> Result<String, String> {
             $crate::validate_configure(arg)
         }
+
+        // Cycle management updates
+        #[$crate::ic_certified_assets_update(guard = "__ic_certified_assets_is_controller")]
+        #[$crate::ic_certified_assets_candid_method(update)]
+        async fn wallet_send(
+            types::WalletSendArg { canister, amount }: types::WalletSendArg,
+        ) -> Result<(), String> {
+            $crate::wallet_send(canister, amount).await
+        }
+
+        // TCYCLES minting: deposit cycles to TCYCLES ledger account
+        #[$crate::ic_certified_assets_update(guard = "__ic_certified_assets_is_controller")]
+        #[$crate::ic_certified_assets_candid_method(update)]
+        async fn tcycles_deposit(
+            types::TCyclesDepositArg {
+                deposit_args:
+                    types::DepositArgs {
+                        to: types::Icrc1Account { owner, subaccount },
+                        memo,
+                    },
+                amount,
+            }: types::TCyclesDepositArg,
+        ) {
+            if let Err(msg) = $crate::tcycles_deposit(owner, subaccount, amount, memo).await {
+                ic_cdk::trap(&msg);
+            }
+        }
     };
+}
+
+/// Mints TCYCLES by depositing this canister's cycles to the TCYCLES ledger.
+/// Only controllers can call this method (guard is applied in the export macro).
+pub async fn tcycles_deposit(
+    owner: Principal,
+    subaccount: Option<ic_certified_assets_ByteBuf>,
+    amount: u64,
+    memo: Option<ic_certified_assets_ByteBuf>,
+) -> Result<(), String> {
+    let ledger = Principal::from_text("um5iw-rqaaa-aaaaq-qaaba-cai")
+        .expect("Invalid TCYCLES ledger principal");
+    let result = ic_cdk::call::Call::unbounded_wait(ledger, "deposit")
+        .with_arg(DepositArgs {
+            to: Icrc1Account { owner, subaccount },
+            memo,
+        })
+        .with_cycles(amount as u128)
+        .await;
+    match result {
+        Ok(_) => Ok(()),
+        Err(e) => {
+            let refund = ic_cdk::api::msg_cycles_refunded();
+            Err(format!(
+                "Cycles sent: {}\nCycles refunded: {}\nAn error happened during the call: {}",
+                amount, refund, e
+            ))
+        }
+    }
+}
+
+// Return the cycle balance of this canister.
+
+#[derive(CandidType)]
+pub struct BalanceResult<TCycles> {
+    pub amount: TCycles,
+}
+
+pub fn wallet_balance() -> BalanceResult<u64> {
+    BalanceResult {
+        amount: ic_cdk::api::canister_cycle_balance()
+            .try_into()
+            .expect("Balance exceeded a 64-bit value"),
+    }
+}
+
+/// Send cycles to another canister.
+
+#[derive(CandidType)]
+struct DepositCyclesArgs {
+    canister_id: Principal,
+}
+
+pub async fn wallet_send(canister: Principal, amount: u64) -> Result<(), String> {
+    ic_cdk::call::Call::unbounded_wait(Principal::management_canister(), "deposit_cycles")
+        .with_arg(DepositCyclesArgs {
+            canister_id: canister,
+        })
+        .with_cycles(amount as u128)
+        .await
+        .map_err(|e: ic_cdk::call::CallFailed| {
+            let refund = ic_cdk::api::msg_cycles_refunded();
+            format!(
+                "Cycles sent: {}\nCycles refunded: {}\nAn error happened during the call: {}",
+                amount, refund, e
+            )
+        })?;
+
+    Ok(())
 }
 
 #[test]
