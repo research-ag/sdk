@@ -721,14 +721,25 @@ macro_rules! export_canister_methods {
         // Cycle management updates
         #[$crate::ic_certified_assets_update(guard = "__ic_certified_assets_is_controller")]
         #[$crate::ic_certified_assets_candid_method(update)]
-        async fn wallet_send(types::WalletSendArg { canister, amount }: types::WalletSendArg) -> Result<(), String> {
+        async fn wallet_send(
+            types::WalletSendArg { canister, amount }: types::WalletSendArg,
+        ) -> Result<(), String> {
             $crate::wallet_send(canister, amount).await
         }
 
         // TCYCLES minting: deposit cycles to TCYCLES ledger account
         #[$crate::ic_certified_assets_update(guard = "__ic_certified_assets_is_controller")]
         #[$crate::ic_certified_assets_candid_method(update)]
-        async fn tcycles_deposit(types::TCyclesDepositArg { deposit_args: types::DepositArgs { to : types::Icrc1Account { owner, subaccount }, memo }, amount }: types::TCyclesDepositArg) {
+        async fn tcycles_deposit(
+            types::TCyclesDepositArg {
+                deposit_args:
+                    types::DepositArgs {
+                        to: types::Icrc1Account { owner, subaccount },
+                        memo,
+                    },
+                amount,
+            }: types::TCyclesDepositArg,
+        ) {
             if let Err(msg) = $crate::tcycles_deposit(owner, subaccount, amount, memo).await {
                 ic_cdk::trap(&msg);
             }
@@ -747,13 +758,14 @@ pub async fn tcycles_deposit(
     let ledger = Principal::from_text("um5iw-rqaaa-aaaaq-qaaba-cai")
         .expect("Invalid TCYCLES ledger principal");
     let result = ic_cdk::call::Call::unbounded_wait(ledger, "deposit")
-        .with_arg(DepositArgs { to: Icrc1Account { owner, subaccount }, memo })
+        .with_arg(DepositArgs {
+            to: Icrc1Account { owner, subaccount },
+            memo,
+        })
         .with_cycles(amount as u128)
         .await;
     match result {
-        Ok(_) => {
-            Ok(())
-        }
+        Ok(_) => Ok(()),
         Err(e) => {
             let refund = ic_cdk::api::msg_cycles_refunded();
             Err(format!(
@@ -788,7 +800,9 @@ struct DepositCyclesArgs {
 
 pub async fn wallet_send(canister: Principal, amount: u64) -> Result<(), String> {
     ic_cdk::call::Call::unbounded_wait(Principal::management_canister(), "deposit_cycles")
-        .with_arg(DepositCyclesArgs { canister_id: canister })
+        .with_arg(DepositCyclesArgs {
+            canister_id: canister,
+        })
         .with_cycles(amount as u128)
         .await
         .map_err(|e: ic_cdk::call::CallFailed| {
@@ -804,7 +818,7 @@ pub async fn wallet_send(canister: Principal, amount: u64) -> Result<(), String>
 
 #[test]
 fn candid_interface_compatibility() {
-    use candid_parser::utils::{service_compatible, CandidSource};
+    use candid_parser::utils::{CandidSource, service_compatible};
     use std::path::PathBuf;
 
     export_canister_methods!();
